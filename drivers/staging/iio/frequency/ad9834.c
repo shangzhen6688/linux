@@ -54,6 +54,21 @@
 
 #define RES_MASK(bits)	(BIT(bits) - 1)
 
+#define AD9833_CHANNEL(chan, addr,bits,_shift)						\
+	{								\
+		.type = IIO_ALTVOLTAGE,					\
+		.indexed = 1,						\
+		.output = 1,						\
+		.address = addr,\
+		.channel = chan,	\
+		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY),		\
+	}								\
+
+static const struct iio_chan_spec ad9833_channels[] = {
+	AD9833_CHANNEL(0, 0, 32, 0),
+	AD9833_CHANNEL(1, 1, 32, 0),
+};
+
 /**
  * struct ad9834_state - driver instance specific data
  * @spi:		spi_device
@@ -115,6 +130,35 @@ static unsigned int ad9834_calc_freqreg(unsigned long mclk, unsigned long fout)
 
 	do_div(freqreg, mclk);
 	return freqreg;
+}
+
+static int ad9833_write_raw(struct iio_dev *indio_dev,
+			   struct iio_chan_spec const *chan,
+			   int val,
+			   int val2,
+			   long m)
+{
+	unsigned long clk_freq;
+	unsigned long regval;
+
+	clk_freq = clk_get_rate(st->mclk);
+
+	if (fout > (clk_freq / 2))
+		return -EINVAL;
+
+	regval = ad9834_calc_freqreg(clk_freq, fout);
+
+	st->freq_data[0] = cpu_to_be16(addr | (regval &
+				       RES_MASK(AD9834_FREQ_BITS / 2)));
+	st->freq_data[1] = cpu_to_be16(addr | ((regval >>
+				       (AD9834_FREQ_BITS / 2)) &
+				       RES_MASK(AD9834_FREQ_BITS / 2)));
+
+	return spi_sync(st->spi, &st->freq_msg);
+	printk("I here %lx\n", chan->address);
+	printk("value is %lx\n", val);	
+	//*val2=2;
+	return 0;
 }
 
 static int ad9834_write_frequency(struct ad9834_state *st,
@@ -370,8 +414,8 @@ static struct attribute *ad9834_attributes[] = {
 };
 
 static struct attribute *ad9833_attributes[] = {
-	&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
 	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
@@ -398,6 +442,7 @@ static const struct iio_info ad9834_info = {
 };
 
 static const struct iio_info ad9833_info = {
+	.write_raw = &ad9833_write_raw,
 	.attrs = &ad9833_attribute_group,
 	.driver_module = THIS_MODULE,
 };
@@ -443,6 +488,9 @@ static int ad9834_probe(struct spi_device *spi)
 	st->spi = spi;
 	st->devid = spi_get_device_id(spi)->driver_data;
 	st->reg = reg;
+
+	indio_dev->num_channels = 2;//ARRAY_SIZE(ad9833_channels);
+	indio_dev->channels=ad9833_channels;
 	indio_dev->dev.parent = &spi->dev;
 	indio_dev->name = spi_get_device_id(spi)->name;
 	switch (st->devid) {
