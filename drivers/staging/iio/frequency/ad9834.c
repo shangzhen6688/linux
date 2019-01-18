@@ -61,7 +61,8 @@
 		.output = 1,						\
 		.address = (chan),\
 		.channel = (chan),	\
-		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY),		\
+		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
+						| BIT(IIO_CHAN_INFO_PHASE),	\
 	}								\
 
 static const struct iio_chan_spec ad9833_channels[] = {
@@ -132,52 +133,6 @@ static unsigned int ad9834_calc_freqreg(unsigned long mclk, unsigned long fout)
 	return freqreg;
 }
 
-static int ad9833_write_raw(struct iio_dev *indio_dev,
-			   struct iio_chan_spec const *chan,
-			   int val,
-			   int val2,
-			   long m)
-{
-	unsigned long clk_freq;
-	unsigned long regval;
-	struct ad9834_state *st = iio_priv(indio_dev);
-
-	printk("I here %lx\n", chan->address);
-	printk("value is %lx\n", val);	
-	printk("mask is %lx\n", m);	
-
-	switch(m) {
-	case IIO_CHAN_INFO_FREQUENCY:
-		clk_freq = clk_get_rate(st->mclk);
-
-		if (val > (clk_freq / 2))
-			return -EINVAL;
-
-		regval = ad9834_calc_freqreg(clk_freq, val);
-
-		switch(chan->address) {
-		case 0:
-			st->freq_data[0] = cpu_to_be16((AD9834_REG_FREQ0) | (regval &
-						       RES_MASK(AD9834_FREQ_BITS / 2)));
-			st->freq_data[1] = cpu_to_be16( AD9834_REG_FREQ0 | ((regval >>
-						       (AD9834_FREQ_BITS / 2)) &
-						       RES_MASK(AD9834_FREQ_BITS / 2)));
-			break;
-		case 1:
-			st->freq_data[0] = cpu_to_be16((AD9834_REG_FREQ1) | (regval &
-						       RES_MASK(AD9834_FREQ_BITS / 2)));
-			st->freq_data[1] = cpu_to_be16( AD9834_REG_FREQ1 | ((regval >>
-						       (AD9834_FREQ_BITS / 2)) &
-						       RES_MASK(AD9834_FREQ_BITS / 2)));
-		
-		}	
-
-		return spi_sync(st->spi, &st->freq_msg);
-	}
-	//*val2=2;
-	return 0;
-}
-
 static int ad9834_write_frequency(struct ad9834_state *st,
 				  unsigned long addr, unsigned long fout)
 {
@@ -210,6 +165,35 @@ static int ad9834_write_phase(struct ad9834_state *st,
 	st->data = cpu_to_be16(addr | phase);
 
 	return spi_sync(st->spi, &st->msg);
+}
+
+static int ad9833_write_raw(struct iio_dev *indio_dev,
+			   struct iio_chan_spec const *chan,
+			   int val,
+			   int val2,
+			   long m)
+{
+	unsigned long clk_freq;
+	unsigned long regval;
+	struct ad9834_state *st = iio_priv(indio_dev);
+
+	printk("I here %lx\n", chan->address);
+	printk("value is %lx\n", val);	
+	printk("mask is %lx\n", m);	
+
+	switch(m) {
+	case IIO_CHAN_INFO_FREQUENCY:
+		return ad9834_write_frequency(st, 
+					chan->address == 0 ? AD9834_REG_FREQ0 : AD9834_REG_FREQ1,
+					val);
+	case IIO_CHAN_INFO_PHASE:
+		return ad9834_write_phase(st, 
+					chan->address == 0 ? AD9834_REG_PHASE0 : AD9834_REG_PHASE1,
+					val);
+		break;	
+	}
+	//*val2=2;
+	return 0;
 }
 
 static ssize_t ad9834_write(struct device *dev,
@@ -437,8 +421,8 @@ static struct attribute *ad9833_attributes[] = {
 	//&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
 	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
 	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
