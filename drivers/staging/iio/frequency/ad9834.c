@@ -63,6 +63,7 @@
 		.channel = (chan),	\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
 						| BIT(IIO_CHAN_INFO_PHASE),	\
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE)	\
 	}								\
 
 static const struct iio_chan_spec ad9833_channels[] = {
@@ -214,14 +215,6 @@ static ssize_t ad9834_write(struct device *dev,
 	printk("Value %lx\n", val);
 	mutex_lock(&st->lock);
 	switch ((u32)this_attr->address) {
-	case AD9834_REG_FREQ0:
-	case AD9834_REG_FREQ1:
-		ret = ad9834_write_frequency(st, this_attr->address, val);
-		break;
-	case AD9834_REG_PHASE0:
-	case AD9834_REG_PHASE1:
-		ret = ad9834_write_phase(st, this_attr->address, val);
-		break;
 	case AD9834_OPBITEN:
 		if (st->control & AD9834_MODE) {
 			ret = -EINVAL;  /* AD9843 reserved mode */
@@ -380,13 +373,9 @@ static IIO_DEVICE_ATTR(out_altvoltage0_out1_wavetype_available, 0444,
  * see dds.h for further information
  */
 
-static IIO_DEV_ATTR_FREQ(0, 0, 0200, NULL, ad9834_write, AD9834_REG_FREQ0);
-static IIO_DEV_ATTR_FREQ(0, 1, 0200, NULL, ad9834_write, AD9834_REG_FREQ1);
 static IIO_DEV_ATTR_FREQSYMBOL(0, 0200, NULL, ad9834_write, AD9834_FSEL);
 static IIO_CONST_ATTR_FREQ_SCALE(0, "1"); /* 1Hz */
 
-static IIO_DEV_ATTR_PHASE(0, 0, 0200, NULL, ad9834_write, AD9834_REG_PHASE0);
-static IIO_DEV_ATTR_PHASE(0, 1, 0200, NULL, ad9834_write, AD9834_REG_PHASE1);
 static IIO_DEV_ATTR_PHASESYMBOL(0, 0200, NULL, ad9834_write, AD9834_PSEL);
 static IIO_CONST_ATTR_PHASE_SCALE(0, "0.0015339808"); /* 2PI/2^12 rad*/
 
@@ -399,11 +388,11 @@ static IIO_DEV_ATTR_OUT_WAVETYPE(0, 0, ad9834_store_wavetype, 0);
 static IIO_DEV_ATTR_OUT_WAVETYPE(0, 1, ad9834_store_wavetype, 1);
 
 static struct attribute *ad9834_attributes[] = {
-	&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
 	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
 	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_pincontrol_en.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
