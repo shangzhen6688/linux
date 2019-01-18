@@ -54,19 +54,19 @@
 
 #define RES_MASK(bits)	(BIT(bits) - 1)
 
-#define AD9833_CHANNEL(chan, addr,bits,_shift)						\
+#define AD9833_CHANNEL(chan)						\
 	{								\
 		.type = IIO_ALTVOLTAGE,					\
 		.indexed = 1,						\
 		.output = 1,						\
-		.address = addr,\
-		.channel = chan,	\
+		.address = (chan),\
+		.channel = (chan),	\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY),		\
 	}								\
 
 static const struct iio_chan_spec ad9833_channels[] = {
-	AD9833_CHANNEL(0, 0, 32, 0),
-	AD9833_CHANNEL(1, 1, 32, 0),
+	AD9833_CHANNEL(0),
+	AD9833_CHANNEL(1),
 };
 
 /**
@@ -140,23 +140,40 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 {
 	unsigned long clk_freq;
 	unsigned long regval;
+	struct ad9834_state *st = iio_priv(indio_dev);
 
-	clk_freq = clk_get_rate(st->mclk);
-
-	if (fout > (clk_freq / 2))
-		return -EINVAL;
-
-	regval = ad9834_calc_freqreg(clk_freq, fout);
-
-	st->freq_data[0] = cpu_to_be16(addr | (regval &
-				       RES_MASK(AD9834_FREQ_BITS / 2)));
-	st->freq_data[1] = cpu_to_be16(addr | ((regval >>
-				       (AD9834_FREQ_BITS / 2)) &
-				       RES_MASK(AD9834_FREQ_BITS / 2)));
-
-	return spi_sync(st->spi, &st->freq_msg);
 	printk("I here %lx\n", chan->address);
 	printk("value is %lx\n", val);	
+	printk("mask is %lx\n", m);	
+
+	switch(m) {
+	case IIO_CHAN_INFO_FREQUENCY:
+		clk_freq = clk_get_rate(st->mclk);
+
+		if (val > (clk_freq / 2))
+			return -EINVAL;
+
+		regval = ad9834_calc_freqreg(clk_freq, val);
+
+		switch(chan->address) {
+		case 0:
+			st->freq_data[0] = cpu_to_be16((AD9834_REG_FREQ0) | (regval &
+						       RES_MASK(AD9834_FREQ_BITS / 2)));
+			st->freq_data[1] = cpu_to_be16( AD9834_REG_FREQ0 | ((regval >>
+						       (AD9834_FREQ_BITS / 2)) &
+						       RES_MASK(AD9834_FREQ_BITS / 2)));
+			break;
+		case 1:
+			st->freq_data[0] = cpu_to_be16((AD9834_REG_FREQ1) | (regval &
+						       RES_MASK(AD9834_FREQ_BITS / 2)));
+			st->freq_data[1] = cpu_to_be16( AD9834_REG_FREQ1 | ((regval >>
+						       (AD9834_FREQ_BITS / 2)) &
+						       RES_MASK(AD9834_FREQ_BITS / 2)));
+		
+		}	
+
+		return spi_sync(st->spi, &st->freq_msg);
+	}
 	//*val2=2;
 	return 0;
 }
@@ -166,6 +183,8 @@ static int ad9834_write_frequency(struct ad9834_state *st,
 {
 	unsigned long clk_freq;
 	unsigned long regval;
+
+	printk("addr = %lx \n",addr);
 
 	clk_freq = clk_get_rate(st->mclk);
 
@@ -208,6 +227,7 @@ static ssize_t ad9834_write(struct device *dev,
 	if (ret)
 		return ret;
 
+	printk("Value %lx\n", val);
 	mutex_lock(&st->lock);
 	switch ((u32)this_attr->address) {
 	case AD9834_REG_FREQ0:
