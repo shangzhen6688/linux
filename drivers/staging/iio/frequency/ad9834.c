@@ -98,7 +98,11 @@ struct ad9834_state {
 	struct spi_transfer		freq_xfer[2];
 	struct spi_message		freq_msg;
 	struct mutex                    lock;   /* protect sensor state */
-
+	
+	unsigned long frequency0;
+	unsigned long frequency1;
+	unsigned long phase0;
+	unsigned long phase1;
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
 	 * transfer buffers to live in their own cache lines.
@@ -140,6 +144,7 @@ static int ad9834_write_frequency(struct ad9834_state *st,
 {
 	unsigned long clk_freq;
 	unsigned long regval;
+	int res;
 
 	printk("addr = %lx \n",addr);
 
@@ -156,17 +161,53 @@ static int ad9834_write_frequency(struct ad9834_state *st,
 				       (AD9834_FREQ_BITS / 2)) &
 				       RES_MASK(AD9834_FREQ_BITS / 2)));
 
-	return spi_sync(st->spi, &st->freq_msg);
+	res = spi_sync(st->spi, &st->freq_msg);
+	if (res) {
+		return res;	
+	}
+
+	st->frequency0 = fout;
+
+	return 0;
 }
 
 static int ad9834_write_phase(struct ad9834_state *st,
 			      unsigned long addr, unsigned long phase)
 {
+	int res;
+	
 	if (phase > BIT(AD9834_PHASE_BITS))
 		return -EINVAL;
 	st->data = cpu_to_be16(addr | phase);
 
-	return spi_sync(st->spi, &st->msg);
+	res = spi_sync(st->spi, &st->msg);
+	if (res) {
+		return res;
+	}
+
+	st->phase0 = phase;
+
+	return 0;
+}
+
+static int ad9833_read_raw(struct iio_dev *indio_dev,
+			   struct iio_chan_spec const *chan,
+			   int *val,
+			   int *val2,
+			   long m)
+{
+	struct ad9834_state *st = iio_priv(indio_dev);
+
+	switch(m) {
+	case IIO_CHAN_INFO_FREQUENCY:
+		*val = st->frequency0;
+		break;
+	case IIO_CHAN_INFO_PHASE:
+		*val = st->phase0;
+		break;
+	}
+	return IIO_VAL_INT;
+
 }
 
 static int ad9833_write_raw(struct iio_dev *indio_dev,
@@ -448,6 +489,7 @@ static const struct iio_info ad9834_info = {
 
 static const struct iio_info ad9833_info = {
 	.write_raw = &ad9833_write_raw,
+	.read_raw = &ad9833_read_raw,
 	.attrs = &ad9833_attribute_group,
 	.driver_module = THIS_MODULE,
 };
