@@ -62,9 +62,9 @@
 		.address = (chan),\
 		.channel = (chan),	\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
-						| BIT(IIO_CHAN_INFO_PHASE),	\
+						| BIT(IIO_CHAN_INFO_PHASE)	\
+						| BIT(IIO_CHAN_INFO_ENABLE), \ 
 		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE)	\
-						| BIT(IIO_CHAN_INFO_ENABLE) \ 
 	}								\
 
 static const struct iio_chan_spec ad9833_channels[] = {
@@ -103,6 +103,8 @@ struct ad9834_state {
 	unsigned long frequency1;
 	unsigned long phase0;
 	unsigned long phase1;
+	unsigned short enable0;
+	unsigned short enable1;
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
 	 * transfer buffers to live in their own cache lines.
@@ -236,6 +238,25 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 					val);
 		break;
 	case IIO_CHAN_INFO_ENABLE:
+		if (!chan->address) {
+			st->enable0 = val;
+			st->enable1 = 0;
+		} else
+		{
+			st->enable0 = 0;
+			st->enable1 = val;
+		}
+
+		//seelct the channel
+		if (st->enable0) {
+			st->control &= ~(AD9834_FSEL | AD9834_PIN_SW);
+		} else if (st->enable1) {
+			st->control |= AD9834_FSEL;
+			st->control &= ~AD9834_PIN_SW;
+		}
+		st->data = cpu_to_be16(AD9834_REG_CMD | st->control);
+	
+		//enable the global enable
 		if (val)
 			st->control &= ~AD9834_RESET;
 		else
@@ -246,7 +267,6 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 
 		break;	
 	}
-	//*val2=2;
 	return 0;
 }
 
