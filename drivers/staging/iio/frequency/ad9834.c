@@ -64,6 +64,7 @@
 		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
 						| BIT(IIO_CHAN_INFO_PHASE),	\
 		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE)	\
+						| BIT(IIO_CHAN_INFO_ENABLE) \ 
 	}								\
 
 static const struct iio_chan_spec ad9833_channels[] = {
@@ -180,6 +181,7 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 
 	printk("I here %lx\n", chan->address);
 	printk("value is %lx\n", val);	
+	printk("value2 is %lx\n", val2);	
 	printk("mask is %lx\n", m);	
 
 	switch(m) {
@@ -191,6 +193,16 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 		return ad9834_write_phase(st, 
 					chan->address == 0 ? AD9834_REG_PHASE0 : AD9834_REG_PHASE1,
 					val);
+		break;
+	case IIO_CHAN_INFO_ENABLE:
+		if (val)
+			st->control &= ~AD9834_RESET;
+		else
+			st->control |= AD9834_RESET;
+
+		st->data = cpu_to_be16(AD9834_REG_CMD | st->control);
+		return spi_sync(st->spi, &st->msg);
+
 		break;	
 	}
 	//*val2=2;
@@ -415,7 +427,7 @@ static struct attribute *ad9833_attributes[] = {
 	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
 	NULL,
