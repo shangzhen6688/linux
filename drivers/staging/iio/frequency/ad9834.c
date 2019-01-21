@@ -54,24 +54,6 @@
 
 #define RES_MASK(bits)	(BIT(bits) - 1)
 
-#define AD9833_CHANNEL(chan)						\
-	{								\
-		.type = IIO_ALTVOLTAGE,					\
-		.indexed = 1,						\
-		.output = 1,						\
-		.address = (chan),\
-		.channel = (chan),	\
-		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
-						| BIT(IIO_CHAN_INFO_PHASE)	\
-						| BIT(IIO_CHAN_INFO_ENABLE), \ 
-		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE)	\
-	}								\
-
-static const struct iio_chan_spec ad9833_channels[] = {
-	AD9833_CHANNEL(0),
-	AD9833_CHANNEL(1),
-};
-
 /**
  * struct ad9834_state - driver instance specific data
  * @spi:		spi_device
@@ -105,6 +87,7 @@ struct ad9834_state {
 	unsigned long phase1;
 	unsigned short enable0;
 	unsigned short enable1;
+	unsigned short wavetype0;
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
 	 * transfer buffers to live in their own cache lines.
@@ -131,6 +114,93 @@ static struct ad9834_platform_data default_config= {
 	.phase1 = 1024,
 	.en_div2 = false,
 	.en_signbit_msb_out = false,
+};
+
+#define AD9833_CHANNEL(chan)						\
+	{								\
+		.type = IIO_ALTVOLTAGE,					\
+		.indexed = 1,						\
+		.output = 1,						\
+		.address = (chan),\
+		.channel = (chan),	\
+		.info_mask_separate = BIT(IIO_CHAN_INFO_FREQUENCY)		\
+						| BIT(IIO_CHAN_INFO_PHASE)	\
+						| BIT(IIO_CHAN_INFO_ENABLE), \ 
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
+		.ext_info = ad9834_ext_info,			\
+	}								
+static const char * const ad9834_wavetype[] = {
+	"sine",
+	"triangle",
+	"square"
+};
+static int ad9834_get_wavetype(struct iio_dev *indio_dev,
+				     const struct iio_chan_spec *chan)
+{
+	struct ad9834_state *st = iio_priv(indio_dev);
+
+	return st->wavetype0;
+
+	return 0;
+}
+static int ad9834_set_wavetype(struct iio_dev *indio_dev,
+				     const struct iio_chan_spec *chan,
+				     unsigned int mode)
+{
+	struct ad9834_state *st = iio_priv(indio_dev);
+	bool is_ad9833_7 = (st->devid == ID_AD9833) || (st->devid == ID_AD9837);
+	int ret;
+	printk("mode %d \n", mode);
+
+	switch(mode) {
+	case 0: //sine
+		st->control &= ~AD9834_MODE;
+		if (is_ad9833_7)
+			st->control &= ~AD9834_OPBITEN;
+		break;
+	case 1: //triange
+		if (is_ad9833_7) {
+			st->control &= ~AD9834_OPBITEN;
+			st->control |= AD9834_MODE;
+		} else if (st->control & AD9834_OPBITEN) {
+			ret = -EINVAL;	/* AD9843 reserved mode */
+		} else {
+			st->control |= AD9834_MODE;
+		}
+		break;
+	case 2:
+		if (is_ad9833_7) {
+			st->control &= ~AD9834_MODE;
+			st->control |= AD9834_OPBITEN;
+		} else 
+			ret = -EINVAL;
+		break;
+	}
+
+
+	if (!ret) {
+		st->data = cpu_to_be16(AD9834_REG_CMD | st->control);
+		ret = spi_sync(st->spi, &st->msg);
+
+		st->wavetype0 = mode;
+	}
+
+	return 0;
+}
+static const struct iio_enum ad9834_wavetype_enum = {
+	.items = ad9834_wavetype,
+	.num_items = ARRAY_SIZE(ad9834_wavetype),
+	.get = ad9834_get_wavetype,
+	.set = ad9834_set_wavetype,
+};
+static const struct iio_chan_spec_ext_info ad9834_ext_info[] = {
+	IIO_ENUM("wavetype", IIO_SHARED_BY_TYPE, &ad9834_wavetype_enum),
+	IIO_ENUM_AVAILABLE("wavetype", &ad9834_wavetype_enum),
+	{ },
+};
+static const struct iio_chan_spec ad9833_channels[] = {
+	AD9833_CHANNEL(0),
+	AD9833_CHANNEL(1),
 };
 
 static unsigned int ad9834_calc_freqreg(unsigned long mclk, unsigned long fout)
@@ -168,7 +238,10 @@ static int ad9834_write_frequency(struct ad9834_state *st,
 		return res;	
 	}
 
-	st->frequency0 = fout;
+	if (AD9834_REG_FREQ0 == addr)
+		st->frequency0 = fout;
+	else
+		st->frequency1 = fout;
 
 	return 0;
 }
@@ -202,10 +275,14 @@ static int ad9833_read_raw(struct iio_dev *indio_dev,
 
 	switch(m) {
 	case IIO_CHAN_INFO_FREQUENCY:
-		*val = st->frequency0;
+		*val = chan->address == 0 ? st->frequency0 : st->frequency1;
 		break;
 	case IIO_CHAN_INFO_PHASE:
-		*val = st->phase0;
+		*val = chan->address == 0 ? st->phase0 : st->phase1;
+		break;
+	
+	case IIO_CHAN_INFO_ENABLE:
+		*val = chan->address == 0 ? st->enable0 : st->enable1;
 		break;
 	}
 	return IIO_VAL_INT;
@@ -489,8 +566,8 @@ static struct attribute *ad9833_attributes[] = {
 	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
 	NULL,
 };
 
