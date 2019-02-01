@@ -201,6 +201,8 @@ static const struct iio_chan_spec_ext_info ad9834_ext_info[] = {
 static const struct iio_chan_spec ad9833_channels[] = {
 	AD9833_CHANNEL(0),
 	AD9833_CHANNEL(1),
+	AD9833_CHANNEL(2),
+	AD9833_CHANNEL(3),
 };
 
 static unsigned int ad9834_calc_freqreg(unsigned long mclk, unsigned long fout)
@@ -633,7 +635,7 @@ static int ad9834_probe(struct spi_device *spi)
 	st->devid = spi_get_device_id(spi)->driver_data;
 	st->reg = reg;
 
-	indio_dev->num_channels = 2;//ARRAY_SIZE(ad9833_channels);
+	indio_dev->num_channels = ARRAY_SIZE(ad9833_channels);
 	indio_dev->channels=ad9833_channels;
 	indio_dev->dev.parent = &spi->dev;
 	indio_dev->name = spi_get_device_id(spi)->name;
