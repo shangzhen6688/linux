@@ -293,6 +293,9 @@ static int ad9833_read_raw(struct iio_dev *indio_dev,
 	case IIO_CHAN_INFO_ENABLE:
 		*val = st->enable[chan->address];
 		break;
+	case IIO_CHAN_INFO_SCALE:
+		*val = 1;
+		break;
 	}
 	return IIO_VAL_INT;
 
