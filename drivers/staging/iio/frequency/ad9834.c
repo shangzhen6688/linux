@@ -81,12 +81,9 @@ struct ad9834_state {
 	struct spi_message		freq_msg;
 	struct mutex                    lock;   /* protect sensor state */
 	
-	unsigned long frequency0;
-	unsigned long frequency1;
-	unsigned long phase0;
-	unsigned long phase1;
-	unsigned short enable0;
-	unsigned short enable1;
+	unsigned long frequency[2];
+	unsigned long phase[2];
+	unsigned short enable[4];
 	unsigned short wavetype0;
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
@@ -241,9 +238,9 @@ static int ad9834_write_frequency(struct ad9834_state *st,
 	}
 
 	if (AD9834_REG_FREQ0 == addr)
-		st->frequency0 = fout;
+		st->frequency[0] = fout;
 	else
-		st->frequency1 = fout;
+		st->frequency[1] = fout;
 
 	return 0;
 }
@@ -262,8 +259,10 @@ static int ad9834_write_phase(struct ad9834_state *st,
 		return res;
 	}
 
-	st->phase0 = phase;
-
+	if (AD9834_REG_PHASE0 == addr)
+		st->phase[0] = phase;
+	else
+		st->phase[1] = phase;
 	return 0;
 }
 
@@ -277,14 +276,22 @@ static int ad9833_read_raw(struct iio_dev *indio_dev,
 
 	switch(m) {
 	case IIO_CHAN_INFO_FREQUENCY:
-		*val = chan->address == 0 ? st->frequency0 : st->frequency1;
+		if(0 == chan->address
+			|| 1 == chan->address)
+			*val = st->frequency[0];
+		else
+			*val = st->frequency[1];
 		break;
 	case IIO_CHAN_INFO_PHASE:
-		*val = chan->address == 0 ? st->phase0 : st->phase1;
+		if(0 == chan->address
+			|| 2 == chan->address)
+			*val = st->phase[0];
+		else
+			*val = st->phase[1];
 		break;
 	
 	case IIO_CHAN_INFO_ENABLE:
-		*val = chan->address == 0 ? st->enable0 : st->enable1;
+		*val = st->enable[chan->address];
 		break;
 	}
 	return IIO_VAL_INT;
@@ -297,9 +304,11 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 			   int val2,
 			   long m)
 {
+	struct ad9834_state *st = iio_priv(indio_dev);
+	unsigned long frequency_address;
+	unsigned long phase_address;
 	unsigned long clk_freq;
 	unsigned long regval;
-	struct ad9834_state *st = iio_priv(indio_dev);
 
 	printk("I here %lx\n", chan->address);
 	printk("value is %lx\n", val);	
@@ -308,34 +317,57 @@ static int ad9833_write_raw(struct iio_dev *indio_dev,
 
 	switch(m) {
 	case IIO_CHAN_INFO_FREQUENCY:
+		if(0 == chan->address
+			|| 1 == chan->address)
+			frequency_address = AD9834_REG_FREQ0;
+		else
+			frequency_address = AD9834_REG_FREQ1;
 		return ad9834_write_frequency(st, 
-					chan->address == 0 ? AD9834_REG_FREQ0 : AD9834_REG_FREQ1,
+					frequency_address,
 					val);
 	case IIO_CHAN_INFO_PHASE:
+		if(0 == chan->address
+			|| 2 == chan->address)
+			phase_address = AD9834_REG_PHASE0;
+		else
+			phase_address = AD9834_REG_PHASE1;
 		return ad9834_write_phase(st, 
-					chan->address == 0 ? AD9834_REG_PHASE0 : AD9834_REG_PHASE1,
+					phase_address,
 					val);
 		break;
 	case IIO_CHAN_INFO_ENABLE:
-		if (!chan->address) {
-			st->enable0 = val;
-			st->enable1 = 0;
-		} else
-		{
-			st->enable0 = 0;
-			st->enable1 = val;
-		}
+		if(val)
+			memset(st->enable, 0, sizeof(unsigned short) * ARRAY_SIZE(st->enable));
+		st->enable[chan->address] = val;
 
-		//seelct the channel
-		if (st->enable0) {
+		//select the input of mux for frequency
+		if (st->enable[0]
+			|| st->enable[1]) {
 			st->control &= ~(AD9834_FSEL | AD9834_PIN_SW);
-		} else if (st->enable1) {
+		} else {
 			st->control |= AD9834_FSEL;
+			st->control &= ~AD9834_PIN_SW;
+		}
+		//select the input of mux for phase
+		if (st->enable[0]
+			|| st->enable[2]) {
+			st->control &= ~(AD9834_PSEL | AD9834_PIN_SW);
+		} else {
+			st->control |= AD9834_PSEL;
 			st->control &= ~AD9834_PIN_SW;
 		}
 		st->data = cpu_to_be16(AD9834_REG_CMD | st->control);
 	
-		//enable the global enable
+	/*	if (!val) {
+			st->control &= ~(this_attr->address | AD9834_PIN_SW);
+		} else if (val == 1) {
+			st->control |= this_attr->address;
+			st->control &= ~AD9834_PIN_SW;
+		} else {
+			ret = -EINVAL;
+			break;
+		}*/
+		//enable the global board enable
 		if (val)
 			st->control &= ~AD9834_RESET;
 		else
@@ -542,31 +574,31 @@ static IIO_DEV_ATTR_OUT_WAVETYPE(0, 1, ad9834_store_wavetype, 1);
 static struct attribute *ad9834_attributes[] = {
 	//&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
+	//&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
+	//&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
 	&iio_dev_attr_out_altvoltage0_pincontrol_en.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out1_enable.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out1_wavetype.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out1_wavetype_available.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out1_enable.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out1_wavetype.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_out1_wavetype_available.dev_attr.attr,
 	NULL,
 };
 
 static struct attribute *ad9833_attributes[] = {
 	//&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
+	//&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
+	//&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
+	//&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_out0_wavetype.dev_attr.attr,
 	//&iio_dev_attr_out_altvoltage0_out0_wavetype_available.dev_attr.attr,
